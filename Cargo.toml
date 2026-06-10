@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2024"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/satyakwok/evm-rust-lab"
+homepage = "https://satyakwok.dev/projects"
 description = "Practical Rust EVM examples using Alloy, revm, and real RPC workflows."
 
 [dependencies]

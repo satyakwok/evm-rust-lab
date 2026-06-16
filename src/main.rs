@@ -8,6 +8,7 @@ use dotenvy::dotenv;
 use eyre::{Context, Result, eyre};
 
 use evm_rust_lab::abi::{decode_erc20_transfer, function_selector};
+use evm_rust_lab::color;
 use evm_rust_lab::input::{RpcEndpoint, parse_calldata};
 use evm_rust_lab::report::{self, BlockDto, TipDto};
 use evm_rust_lab::rpc::{check_rpc, fetch_block, read_erc20_balance, read_erc20_balances};
@@ -126,7 +127,7 @@ async fn main() -> Result<()> {
                         println!("chain id: {}", status.chain_id);
                         println!("latest block: {}", status.latest_block_number);
                         println!("latest block hash: {}", status.latest_block_hash);
-                        println!("latency: {} ms", status.latency.as_millis());
+                        println!("latency: {}", color::latency(status.latency.as_millis()));
                         println!("tls: {}", endpoint.is_https());
                         if fingerprint {
                             println!(
@@ -137,7 +138,7 @@ async fn main() -> Result<()> {
                     }
                     Err(err) => eprintln!("probe failed: {}", endpoint.scrub(err.to_string())),
                 }
-                println!("overall: {}", health.overall().as_str());
+                println!("overall: {}", color::health_label(health.overall()));
                 for (name, detail) in health.reasons() {
                     println!("  - {name}: {}", detail.unwrap_or("(no detail)"));
                 }

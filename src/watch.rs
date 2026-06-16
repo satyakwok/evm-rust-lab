@@ -14,6 +14,7 @@ use reliakit_core::{Clock, MonotonicClock};
 use reliakit_decide::{Action, Curve, Reasoner, Score};
 use reliakit_ratelimit::RateLimiter;
 
+use crate::color;
 use crate::rpc::check_rpc;
 
 /// Poll the chain tip every `interval`. With `ticks == 0` it runs until
@@ -49,10 +50,11 @@ pub async fn watch(rpc_url: &str, interval: Duration, ticks: u64) -> Result<()> 
                 let ms = u64::try_from(status.latency.as_millis()).unwrap_or(u64::MAX);
                 latencies.push(ms);
                 println!(
-                    "block {} | {ms} ms | avg {} ms | {}",
+                    "block {} | {} | avg {} ms | {}",
                     status.latest_block_number,
+                    color::latency(u128::from(ms)),
                     average(&latencies),
-                    verdict(ms),
+                    color::verdict(verdict(ms)),
                 );
             }
             Err(err) => {

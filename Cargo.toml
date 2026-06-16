@@ -5,12 +5,34 @@ edition = "2024"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/satyakwok/evm-rust-lab"
 homepage = "https://satyakwok.dev/projects"
-description = "Practical Rust EVM examples using Alloy, revm, and real RPC workflows."
+description = "Hands-on Rust EVM lab: library, examples, and an evm-lab CLI with a reliakit resilience stack."
+
+[[bin]]
+name = "evm-lab"
+path = "src/main.rs"
 
 [dependencies]
 alloy = { version = "2.0.5", features = ["full"] }
+clap = { version = "4.5", features = ["derive", "env"] }
 dotenvy = "0.15.7"
 eyre = "0.6.12"
+reliakit-backoff = "1.0.0"
+reliakit-bulkhead = "1.0.0"
+reliakit-circuit = "1.0.0"
+reliakit-codec = "1.0.0"
+reliakit-collections = "1.0.0"
+reliakit-core = "1.0.0"
+reliakit-csv = "1.0.0"
+reliakit-decide = "1.0.0"
+reliakit-derive = "1.0.0"
+reliakit-health = "1.0.0"
+reliakit-json = "1.0.0"
+reliakit-primitives = "1.0.0"
+reliakit-ratelimit = "1.0.0"
+reliakit-retry = "1.0.0"
+reliakit-secret = "1.0.0"
+reliakit-timeout = "1.0.0"
+reliakit-validate = "1.0.0"
 revm = "40.0.3"
 tokio = { version = "1.52.3", features = ["full"] }
 tracing = "0.1.44"

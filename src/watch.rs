@@ -31,6 +31,8 @@ pub async fn watch(rpc_url: &str, interval: Duration, ticks: u64) -> Result<()> 
     let mut breaker = CircuitBreaker::new(3, interval_ms.saturating_mul(5));
     let mut latencies: RingBuffer<u64> = RingBuffer::new(16).expect("capacity is non-zero");
 
+    println!("{}\n", color::title("evm-lab · watch"));
+
     let mut done = 0u64;
     while ticks == 0 || done < ticks {
         if !breaker.allow(clock.now()) {

@@ -8,6 +8,7 @@ use dotenvy::dotenv;
 use eyre::{Context, Result, eyre};
 
 use evm_rust_lab::abi::{decode_erc20_transfer, function_selector};
+use evm_rust_lab::color::{self, Cell};
 use evm_rust_lab::input::{RpcEndpoint, parse_calldata};
 use evm_rust_lab::report::{self, BlockDto, TipDto};
 use evm_rust_lab::rpc::{check_rpc, fetch_block, read_erc20_balance, read_erc20_balances};
@@ -121,26 +122,67 @@ async fn main() -> Result<()> {
                     report::to_json(&report::HealthDto::new(&status, &health))
                 );
             } else {
+                let overall = health.overall();
+                let mut out = String::new();
+                out.push_str(&color::title("evm-lab · RPC health"));
+                out.push_str("\n\n");
+                out.push_str(&color::heading("Target"));
+                out.push('\n');
+                out.push_str(&color::table(
+                    &[vec![
+                        Cell::styled("Endpoint", color::label("Endpoint")),
+                        Cell::plain(color::host(endpoint.expose())),
+                    ]],
+                    3,
+                ));
+                out.push('\n');
+                out.push_str(&color::heading("Result"));
+                out.push('\n');
+
+                let mut result = vec![vec![
+                    Cell::styled(
+                        color::health_word_plain(overall),
+                        color::health_word(overall),
+                    ),
+                    match &status {
+                        Ok(s) => Cell::plain(format!(
+                            "chain {} · block {}",
+                            s.chain_id, s.latest_block_number
+                        )),
+                        Err(_) => Cell::plain("endpoint unreachable"),
+                    },
+                ]];
                 match &status {
-                    Ok(status) => {
-                        println!("chain id: {}", status.chain_id);
-                        println!("latest block: {}", status.latest_block_number);
-                        println!("latest block hash: {}", status.latest_block_hash);
-                        println!("latency: {} ms", status.latency.as_millis());
-                        println!("tls: {}", endpoint.is_https());
+                    Ok(s) => {
+                        let ms = s.latency.as_millis();
+                        result.push(vec![
+                            Cell::styled("Latency", color::label("Latency")),
+                            Cell::styled(format!("{ms} ms"), color::latency(ms)),
+                        ]);
+                        result.push(vec![
+                            Cell::styled("Hash", color::label("Hash")),
+                            Cell::plain(s.latest_block_hash.to_string()),
+                        ]);
+                        result.push(vec![
+                            Cell::styled("TLS", color::label("TLS")),
+                            Cell::plain(if endpoint.is_https() { "yes" } else { "no" }),
+                        ]);
                         if fingerprint {
-                            println!(
-                                "fingerprint: {}",
-                                report::fingerprint(&TipDto::from_status(status))?
-                            );
+                            result.push(vec![
+                                Cell::styled("Fingerprint", color::label("Fingerprint")),
+                                Cell::plain(report::fingerprint(&TipDto::from_status(s))?),
+                            ]);
                         }
                     }
-                    Err(err) => eprintln!("probe failed: {}", endpoint.scrub(err.to_string())),
+                    Err(err) => {
+                        result.push(vec![
+                            Cell::styled("Reason", color::label("Reason")),
+                            Cell::plain(endpoint.scrub(err.to_string())),
+                        ]);
+                    }
                 }
-                println!("overall: {}", health.overall().as_str());
-                for (name, detail) in health.reasons() {
-                    println!("  - {name}: {}", detail.unwrap_or("(no detail)"));
-                }
+                out.push_str(&color::table(&result, 3));
+                print!("{out}");
             }
 
             if !health.is_operational() {
@@ -161,13 +203,22 @@ async fn main() -> Result<()> {
             if json {
                 println!("{}", report::to_json(&dto));
             } else {
-                println!("number: {}", block.number);
-                println!("hash: {}", block.hash);
-                println!("timestamp: {}", block.timestamp);
-                println!("tx count: {}", block.tx_count);
+                let mut out = String::new();
+                out.push_str(&color::title("evm-lab · Block"));
+                out.push_str("\n\n");
+                out.push_str(&color::heading("Result"));
+                out.push('\n');
+                let mut result = vec![
+                    row("Number", block.number.to_string()),
+                    row("Hash", block.hash.to_string()),
+                    row("Timestamp", block.timestamp.to_string()),
+                    row("Tx count", block.tx_count.to_string()),
+                ];
                 if fingerprint {
-                    println!("fingerprint: {}", report::fingerprint(&dto)?);
+                    result.push(row("Fingerprint", report::fingerprint(&dto)?));
                 }
+                out.push_str(&color::table(&result, 3));
+                print!("{out}");
             }
         }
         Command::Balance {
@@ -180,10 +231,21 @@ async fn main() -> Result<()> {
             let raw = read_erc20_balance(endpoint.expose(), token, holder, U256::from(slot))
                 .await
                 .map_err(|e| eyre!("{}", endpoint.scrub(e.to_string())))?;
-            println!("token: {token}");
-            println!("holder: {holder}");
-            println!("balances slot: {slot}");
-            println!("raw balance (token base units): {raw}");
+            let mut out = String::new();
+            out.push_str(&color::title("evm-lab · ERC-20 balance"));
+            out.push_str("\n\n");
+            out.push_str(&color::heading("Result"));
+            out.push('\n');
+            out.push_str(&color::table(
+                &[
+                    row("Token", token.to_string()),
+                    row("Holder", holder.to_string()),
+                    row("Slot", slot.to_string()),
+                    row("Balance", raw.to_string()),
+                ],
+                3,
+            ));
+            print!("{out}");
         }
         Command::Balances {
             rpc_url,
@@ -206,9 +268,23 @@ async fn main() -> Result<()> {
             if csv {
                 print!("{}", report::balances_csv(&rows));
             } else {
+                let mut out = String::new();
+                out.push_str(&color::title("evm-lab · ERC-20 balances"));
+                out.push_str("\n\n");
+                out.push_str(&color::heading("Holders"));
+                out.push('\n');
+                let mut table_rows = vec![vec![
+                    Cell::styled("Holder", color::label("Holder")),
+                    Cell::styled("Raw balance", color::label("Raw balance")),
+                ]];
                 for (holder, balance) in &rows {
-                    println!("{holder}  {balance}");
+                    table_rows.push(vec![
+                        Cell::plain(holder.to_string()),
+                        Cell::plain(balance.to_string()),
+                    ]);
                 }
+                out.push_str(&color::table(&table_rows, 4));
+                print!("{out}");
             }
         }
         Command::Watch {
@@ -230,6 +306,11 @@ async fn main() -> Result<()> {
     }
 
     Ok(())
+}
+
+/// A two-column row: a muted label and a plain value.
+fn row(label: &str, value: String) -> Vec<Cell> {
+    vec![Cell::styled(label, color::label(label)), Cell::plain(value)]
 }
 
 fn parse_block_tag(input: &str) -> Result<BlockNumberOrTag> {

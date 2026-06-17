@@ -34,6 +34,8 @@ cargo run --bin evm-lab -- health
 HTTP(S) URL and held as a redacted secret (RPC URLs often embed an API key).
 
 ```sh
+evm-lab check --verbose
+evm-lab ping
 evm-lab health --json --fingerprint
 evm-lab block --number latest
 evm-lab balance 0xA0b8...eB48 0xd8dA...6045 --slot 9
@@ -45,6 +47,8 @@ evm-lab decode-transfer 0xa9059cbb...
 
 | Command | What it does |
 | --- | --- |
+| `check` | Full RPC readiness suite (Core / Head / Capability / Archive), per-category PASS/WARN/FAIL and an overall verdict. |
+| `ping` | Chain id, head, and client over a raw JSON-RPC path built and parsed entirely with reliakit-json (no serde, no provider). |
 | `health` | Probes an endpoint; criticality-aware verdict (reachability critical, latency degrade-only). |
 | `block` | Fetches a block's number, hash, timestamp, and tx count. |
 | `balance` | Derives one ERC-20 balance storage slot and reads it. |

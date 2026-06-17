@@ -80,6 +80,17 @@ pub fn health_word(status: Health) -> String {
     paint(&format!("1;{code}"), health_word_plain(status))
 }
 
+/// A check status word: `PASS` green, `WARN` amber, `FAIL` red.
+pub fn status(label: &str) -> String {
+    let code = match label {
+        "PASS" => GOOD,
+        "WARN" => WARN,
+        "FAIL" => BAD,
+        _ => MUTED,
+    };
+    paint(&format!("1;{code}"), label)
+}
+
 /// A watch verdict: `steady` green, `alert` red.
 pub fn verdict(word: &str) -> String {
     match word {

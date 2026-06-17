@@ -2000,6 +2000,7 @@ dependencies = [
  "reliakit-secret",
  "reliakit-timeout",
  "reliakit-validate",
+ "reqwest",
  "revm",
  "tokio",
  "tracing",

@@ -33,6 +33,7 @@ reliakit-retry = "1.0.0"
 reliakit-secret = "1.0.0"
 reliakit-timeout = "1.0.0"
 reliakit-validate = "1.0.0"
+reqwest = { version = "0.13.4", default-features = false, features = ["rustls"] }
 revm = "40.0.3"
 tokio = { version = "1.52.3", features = ["full"] }
 tracing = "0.1.44"

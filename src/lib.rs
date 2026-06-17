@@ -8,8 +8,10 @@
 //! under rate-limit and circuit-breaker control.
 
 pub mod abi;
+pub mod check;
 pub mod color;
 pub mod input;
+pub mod raw;
 pub mod report;
 pub mod rpc;
 pub mod storage;

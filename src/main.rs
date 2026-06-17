@@ -8,8 +8,10 @@ use dotenvy::dotenv;
 use eyre::{Context, Result, eyre};
 
 use evm_rust_lab::abi::{decode_erc20_transfer, function_selector};
+use evm_rust_lab::check::{self, Category, CheckReport};
 use evm_rust_lab::color::{self, Cell};
 use evm_rust_lab::input::{RpcEndpoint, parse_calldata};
+use evm_rust_lab::raw;
 use evm_rust_lab::report::{self, BlockDto, TipDto};
 use evm_rust_lab::rpc::{check_rpc, fetch_block, read_erc20_balance, read_erc20_balances};
 use evm_rust_lab::watch::watch;
@@ -78,6 +80,17 @@ enum Command {
         #[arg(long)]
         csv: bool,
     },
+    /// Run the full RPC readiness check suite.
+    Check {
+        #[arg(long, env = "EVM_RPC_URL")]
+        rpc_url: String,
+        /// Emit the readiness report as JSON.
+        #[arg(long)]
+        json: bool,
+        /// Show every individual check, not just per-category status.
+        #[arg(long)]
+        verbose: bool,
+    },
     /// Poll the chain tip under rate-limit and circuit-breaker control.
     Watch {
         #[arg(long, env = "EVM_RPC_URL")]
@@ -88,6 +101,12 @@ enum Command {
         /// Stop after this many probes (0 runs until interrupted).
         #[arg(long, default_value_t = 0)]
         ticks: u64,
+    },
+    /// Query chain id, head, and client via a raw JSON-RPC path built and parsed
+    /// entirely with reliakit-json (no serde, no Alloy provider).
+    Ping {
+        #[arg(long, env = "EVM_RPC_URL")]
+        rpc_url: String,
     },
     /// Compute the 4-byte selector of a function signature (offline).
     Selector {
@@ -287,6 +306,27 @@ async fn main() -> Result<()> {
                 print!("{out}");
             }
         }
+        Command::Check {
+            rpc_url,
+            json,
+            verbose,
+        } => {
+            let endpoint = RpcEndpoint::parse(&rpc_url)?;
+            let report = check::run_checks(endpoint.expose())
+                .await
+                .map_err(|e| eyre!("{}", endpoint.scrub(e.to_string())))?;
+            if json {
+                println!("{}", check::to_json(&report));
+            } else {
+                print!(
+                    "{}",
+                    render_check(&report, color::host(endpoint.expose()), verbose)
+                );
+            }
+            if !report.is_operational() {
+                std::process::exit(1);
+            }
+        }
         Command::Watch {
             rpc_url,
             interval_ms,
@@ -294,6 +334,54 @@ async fn main() -> Result<()> {
         } => {
             let endpoint = RpcEndpoint::parse(&rpc_url)?;
             watch(endpoint.expose(), Duration::from_millis(interval_ms), ticks).await?;
+        }
+        Command::Ping { rpc_url } => {
+            let endpoint = RpcEndpoint::parse(&rpc_url)?;
+            let client = raw::RawClient::new(endpoint.expose());
+
+            let scrub = |e: eyre::Report| eyre!("{}", endpoint.scrub(e.to_string()));
+            let chain = client.call("eth_chainId", vec![]).await.map_err(scrub)?;
+            let block = client
+                .call("eth_blockNumber", vec![])
+                .await
+                .map_err(scrub)?;
+            let version = client
+                .call("web3_clientVersion", vec![])
+                .await
+                .map_err(scrub)?;
+
+            let mut out = String::new();
+            out.push_str(&color::title("evm-lab · ping (reliakit-json)"));
+            out.push_str("\n\n");
+            out.push_str(&color::heading("Target"));
+            out.push('\n');
+            out.push_str(&color::table(
+                &[row("Endpoint", color::host(endpoint.expose()))],
+                3,
+            ));
+            out.push('\n');
+            out.push_str(&color::heading("Result"));
+            out.push('\n');
+            out.push_str(&color::table(
+                &[
+                    row(
+                        "Chain",
+                        raw::quantity(&chain).map_or_else(|| "-".to_owned(), |n| n.to_string()),
+                    ),
+                    row(
+                        "Block",
+                        raw::quantity(&block).map_or_else(|| "-".to_owned(), |n| n.to_string()),
+                    ),
+                    row("Client", version.as_str().unwrap_or("-").to_owned()),
+                ],
+                3,
+            ));
+            out.push('\n');
+            out.push_str(&color::label(
+                "JSON-RPC request and response handled entirely by reliakit-json.",
+            ));
+            out.push('\n');
+            print!("{out}");
         }
         Command::Selector { signature } => {
             println!("0x{}", hex::encode(function_selector(&signature)));
@@ -311,6 +399,98 @@ async fn main() -> Result<()> {
 /// A two-column row: a muted label and a plain value.
 fn row(label: &str, value: String) -> Vec<Cell> {
     vec![Cell::styled(label, color::label(label)), Cell::plain(value)]
+}
+
+/// Render the readiness report as a titled, sectioned report.
+fn render_check(report: &CheckReport, host: String, verbose: bool) -> String {
+    let overall = report.overall();
+    let mut out = String::new();
+    out.push_str(&color::title("evm-lab · RPC readiness"));
+    out.push_str("\n\n");
+
+    out.push_str(&color::heading("Target"));
+    out.push('\n');
+    out.push_str(&color::table(&[row("Endpoint", host)], 3));
+    out.push('\n');
+
+    out.push_str(&color::heading("Result"));
+    out.push('\n');
+    let mut result = vec![vec![
+        Cell::styled(
+            color::health_word_plain(overall),
+            color::health_word(overall),
+        ),
+        Cell::plain(format!(
+            "{} passed · {} failed",
+            report.passed(),
+            report.failed()
+        )),
+    ]];
+    result.push(row(
+        "Latency",
+        format!("avg {} ms", report.avg_latency_ms()),
+    ));
+    result.push(row(
+        "Chain",
+        report
+            .chain_id
+            .map_or_else(|| "-".to_owned(), |c| c.to_string()),
+    ));
+    result.push(row(
+        "Client",
+        report.client.clone().unwrap_or_else(|| "-".to_owned()),
+    ));
+    result.push(row(
+        "Head",
+        report
+            .head_lag_secs
+            .map_or_else(|| "-".to_owned(), |s| format!("{s}s behind")),
+    ));
+    out.push_str(&color::table(&result, 3));
+    out.push('\n');
+
+    out.push_str(&color::heading("Checks"));
+    out.push('\n');
+    let mut rows = vec![vec![
+        Cell::styled("Category", color::label("Category")),
+        Cell::styled("Status", color::label("Status")),
+        Cell::styled("Summary", color::label("Summary")),
+    ]];
+    for category in [
+        Category::Core,
+        Category::Head,
+        Category::Capability,
+        Category::Archive,
+    ] {
+        let outcome = report.category_outcome(category);
+        let (passed, total) = report.category_counts(category);
+        rows.push(vec![
+            Cell::plain(category.label()),
+            Cell::styled(outcome.label(), color::status(outcome.label())),
+            Cell::plain(format!("{passed} / {total}")),
+        ]);
+    }
+    out.push_str(&color::table(&rows, 4));
+
+    if verbose {
+        out.push('\n');
+        out.push_str(&color::heading("Detail"));
+        out.push('\n');
+        let detail: Vec<Vec<Cell>> = report
+            .checks
+            .iter()
+            .map(|c| {
+                vec![
+                    Cell::plain(c.method),
+                    Cell::styled(c.outcome.label(), color::status(c.outcome.label())),
+                    Cell::plain(c.detail.clone()),
+                ]
+            })
+            .collect();
+        out.push_str(&color::table(&detail, 3));
+    }
+
+    out
 }
 
 fn parse_block_tag(input: &str) -> Result<BlockNumberOrTag> {
